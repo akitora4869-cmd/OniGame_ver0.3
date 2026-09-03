@@ -1,0 +1,113 @@
+name: Build OniGame
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Find project
+        id: project
+        shell: bash
+        run: |
+          POM_PATH="$(find . \
+            -name pom.xml \
+            -type f \
+            -not -path '*/target/*' \
+            | head -n 1)"
+
+          if [ -z "$POM_PATH" ]; then
+            echo "::error::pom.xmlが見つかりません。"
+            echo "::error::配布ZIPを展開して、中身をGitHubへアップロードしてください。"
+            exit 1
+          fi
+
+          PROJECT_DIR="$(dirname "$POM_PATH")"
+
+          echo "directory=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+          echo "使用するプロジェクト: $PROJECT_DIR"
+
+      - name: Build plugin
+        working-directory: ${{ steps.project.outputs.directory }}
+        run: mvn --batch-mode --update-snapshots clean package
+
+      - name: Check plugin JAR
+        shell: bash
+        run: |
+          PROJECT_DIR="${{ steps.project.outputs.directory }}"
+
+          JAR_PATH="$(find "$PROJECT_DIR/target" \
+            -maxdepth 1 \
+            -name 'OniGame-*.jar' \
+            -type f \
+            | head -n 1)"
+
+          if [ -z "$JAR_PATH" ]; then
+            echo "::error::OniGameのJARが生成されませんでした。"
+            exit 1
+          fi
+
+          echo "生成されたJAR:"
+          ls -lh "$JAR_PATH"
+
+      - name: Build Dakko resource pack
+        shell: bash
+        run: |
+          PROJECT_DIR="${{ steps.project.outputs.directory }}"
+          RESOURCE_DIR="$PROJECT_DIR/resourcepack"
+          OUTPUT_FILE="$PROJECT_DIR/OniGame-Dakko-ResourcePack-v1.zip"
+
+          if [ ! -f "$RESOURCE_DIR/pack.mcmeta" ]; then
+            echo "::error::resourcepack/pack.mcmetaが見つかりません。"
+            exit 1
+          fi
+
+          if [ ! -f "$RESOURCE_DIR/assets/minecraft/textures/models/armor/chainmail_layer_1.png" ]; then
+            echo "::error::堕狐のlayer 1テクスチャが見つかりません。"
+            exit 1
+          fi
+
+          if [ ! -f "$RESOURCE_DIR/assets/minecraft/textures/models/armor/chainmail_layer_2.png" ]; then
+            echo "::error::堕狐のlayer 2テクスチャが見つかりません。"
+            exit 1
+          fi
+
+          rm -f "$OUTPUT_FILE"
+
+          cd "$RESOURCE_DIR"
+          zip -r "$OUTPUT_FILE" pack.mcmeta assets
+
+          echo "生成されたリソースパック:"
+          ls -lh "$OUTPUT_FILE"
+
+      - name: Upload plugin JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: OniGame-Paper-1.20.1-v0.3.0
+          path: ${{ steps.project.outputs.directory }}/target/OniGame-*.jar
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload Dakko resource pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: OniGame-Dakko-ResourcePack-v1
+          path: ${{ steps.project.outputs.directory }}/OniGame-Dakko-ResourcePack-v1.zip
+          if-no-files-found: error
+          retention-days: 30
