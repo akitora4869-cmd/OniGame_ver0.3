@@ -9,20 +9,20 @@ on:
 
 jobs:
   build:
+    name: Build plugin and resource pack
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-          cache: maven
+      - name: Show repository files
+        shell: bash
+        run: |
+          echo "Repository contents:"
+          find . -maxdepth 5 -type f | sort
 
-      - name: Find project
+      - name: Find Maven project
         id: project
         shell: bash
         run: |
@@ -34,20 +34,38 @@ jobs:
 
           if [ -z "$POM_PATH" ]; then
             echo "::error::pom.xmlが見つかりません。"
-            echo "::error::配布ZIPを展開して、中身をGitHubへアップロードしてください。"
+            echo "::error::配布ZIPを展開し、pom.xmlとsrcフォルダをGitHubへアップロードしてください。"
             exit 1
           fi
 
           PROJECT_DIR="$(dirname "$POM_PATH")"
 
+          echo "pom=$POM_PATH" >> "$GITHUB_OUTPUT"
           echo "directory=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
-          echo "使用するプロジェクト: $PROJECT_DIR"
 
-      - name: Build plugin
+          echo "使用するpom.xml: $POM_PATH"
+          echo "プロジェクトフォルダ: $PROJECT_DIR"
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Show Java and Maven versions
+        shell: bash
+        run: |
+          java -version
+          mvn -version
+
+      - name: Build OniGame plugin
         working-directory: ${{ steps.project.outputs.directory }}
-        run: mvn --batch-mode --update-snapshots clean package
+        shell: bash
+        run: |
+          mvn --batch-mode --update-snapshots clean package
 
-      - name: Check plugin JAR
+      - name: Find generated plugin JAR
+        id: plugin
         shell: bash
         run: |
           PROJECT_DIR="${{ steps.project.outputs.directory }}"
@@ -63,44 +81,69 @@ jobs:
             exit 1
           fi
 
-          echo "生成されたJAR:"
+          JAR_PATH="$(realpath "$JAR_PATH")"
+
+          echo "path=$JAR_PATH" >> "$GITHUB_OUTPUT"
+
+          echo "生成されたプラグインJAR:"
           ls -lh "$JAR_PATH"
 
       - name: Build Dakko resource pack
+        id: resource_pack
         shell: bash
         run: |
           PROJECT_DIR="${{ steps.project.outputs.directory }}"
           RESOURCE_DIR="$PROJECT_DIR/resourcepack"
-          OUTPUT_FILE="$PROJECT_DIR/OniGame-Dakko-ResourcePack-v1.zip"
+          OUTPUT_FILE="$GITHUB_WORKSPACE/OniGame-Dakko-ResourcePack-v1.zip"
+
+          if [ ! -d "$RESOURCE_DIR" ]; then
+            echo "::error::resourcepackフォルダが見つかりません。"
+            exit 1
+          fi
 
           if [ ! -f "$RESOURCE_DIR/pack.mcmeta" ]; then
             echo "::error::resourcepack/pack.mcmetaが見つかりません。"
             exit 1
           fi
 
-          if [ ! -f "$RESOURCE_DIR/assets/minecraft/textures/models/armor/chainmail_layer_1.png" ]; then
-            echo "::error::堕狐のlayer 1テクスチャが見つかりません。"
+          LAYER_1="$RESOURCE_DIR/assets/minecraft/textures/models/armor/chainmail_layer_1.png"
+          LAYER_2="$RESOURCE_DIR/assets/minecraft/textures/models/armor/chainmail_layer_2.png"
+
+          if [ ! -f "$LAYER_1" ]; then
+            echo "::error::chainmail_layer_1.pngが見つかりません。"
             exit 1
           fi
 
-          if [ ! -f "$RESOURCE_DIR/assets/minecraft/textures/models/armor/chainmail_layer_2.png" ]; then
-            echo "::error::堕狐のlayer 2テクスチャが見つかりません。"
+          if [ ! -f "$LAYER_2" ]; then
+            echo "::error::chainmail_layer_2.pngが見つかりません。"
             exit 1
           fi
 
           rm -f "$OUTPUT_FILE"
 
-          cd "$RESOURCE_DIR"
-          zip -r "$OUTPUT_FILE" pack.mcmeta assets
+          (
+            cd "$RESOURCE_DIR"
+            zip -r "$OUTPUT_FILE" pack.mcmeta assets
+          )
+
+          if [ ! -f "$OUTPUT_FILE" ]; then
+            echo "::error::リソースパックZIPの生成に失敗しました。"
+            exit 1
+          fi
+
+          echo "path=$OUTPUT_FILE" >> "$GITHUB_OUTPUT"
 
           echo "生成されたリソースパック:"
           ls -lh "$OUTPUT_FILE"
 
-      - name: Upload plugin JAR
+          echo "リソースパックの内容:"
+          unzip -l "$OUTPUT_FILE"
+
+      - name: Upload OniGame plugin
         uses: actions/upload-artifact@v4
         with:
           name: OniGame-Paper-1.20.1-v0.3.0
-          path: ${{ steps.project.outputs.directory }}/target/OniGame-*.jar
+          path: ${{ steps.plugin.outputs.path }}
           if-no-files-found: error
           retention-days: 30
 
@@ -108,6 +151,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: OniGame-Dakko-ResourcePack-v1
-          path: ${{ steps.project.outputs.directory }}/OniGame-Dakko-ResourcePack-v1.zip
+          path: ${{ steps.resource_pack.outputs.path }}
           if-no-files-found: error
           retention-days: 30
