@@ -1,0 +1,9 @@
+minimum-players: 2
+game-seconds: 1200
+heart-material: CRYING_OBSIDIAN
+heart-max-health: 20
+heart-placement-mode: random
+random-heart-count: 5
+heart-marker-name: "鬼の心臓地点"
+exit-radius: 3.0
+friendly-fire: false

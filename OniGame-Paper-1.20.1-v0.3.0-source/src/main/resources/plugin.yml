@@ -1,0 +1,13 @@
+name: OniGame
+version: 0.3.0
+main: jp.muimi.onigame.OniGamePlugin
+api-version: '1.20'
+author: muimi
+commands:
+  onigame:
+    description: 鬼げぇむ管理・参加コマンド
+    aliases: [og]
+    usage: /onigame help
+permissions:
+  onigame.admin:
+    default: op
